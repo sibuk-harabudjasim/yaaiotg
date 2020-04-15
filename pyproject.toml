@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "yaaiotg"
+version = "0.1.0"
+description = ""
+authors = ["manitou <sibuk.harabudjasim@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.6"
+aiotg = "^1.0.0"
+environs = "^7.3.1"
+ipdb = "^0.13.2"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
