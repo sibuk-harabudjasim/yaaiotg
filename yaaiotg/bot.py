@@ -8,7 +8,7 @@ from yaaiotg.userstorage.base import User
 
 
 async def default_entry(dialog, initial_message=None):
-    yield dialog.say('Hi! This is test yaaoitg bot! I only can say my name.')
+    yield dialog.say('Hi! This is test yaaiotg bot! I only can say my name.')
 
 
 class YaaiotgBot:
@@ -24,14 +24,28 @@ class YaaiotgBot:
         self.user_class = user_class
         self.bot = Bot(*args, **kwargs)
 
-    async def default_handler(self, chat, message):
+    @staticmethod
+    def _process_subscriptions(chat, message, user):
+        for key, key_info in user.subscriptions.items():
+            if key == message['text']:
+                return key_info.callback(chat, message, user)
+
+    async def default_message_handler(self, chat, message):
         user = self.userstorage.get_or_create(chat.sender['id'], self.user_class(chat.sender))
-        try:
-            if user.dialog:
-                awaited_answer = await user.dialog.resume(chat, message['text'])
+        message_data = message['text']
+        data = self._process_subscriptions(chat, message, user)
+
+        if data:
+            if isinstance(data, Dialog):
+                user.dialog = data
             else:
-                user.dialog = Dialog(chat)
-                awaited_answer = await user.dialog.start(self.entry_point)
+                message_data = data
+
+        try:
+            if not user.dialog:
+                user.dialog = Dialog(user, self.entry_point)
+            awaited_answer = await user.dialog.step(chat, message_data)
+
             if not awaited_answer:
                 dialog, user.dialog = user.dialog, None
                 del dialog
@@ -49,10 +63,16 @@ class YaaiotgBot:
             traceback.print_exc()
         self.userstorage.save(chat.sender['id'], user)
 
+    async def default_callback_handler(self, chat, callback_query):
+        user = self.userstorage.get_or_create(chat.sender['id'], self.user_class(chat.sender))
+        # do smth
+        self.userstorage.save(chat.sender['id'], user)
+
     def run(self, *args, **kwargs):
         if not self.entry_point:
             self.entry_point = default_entry
-        self.bot.default(self.default_handler)
+        self.bot.default(self.default_message_handler)
+        self.bot.callback(self.default_callback_handler)
         self.bot.run(*args, **kwargs)
 
 
