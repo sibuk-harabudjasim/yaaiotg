@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 import inspect
-from typing import Callable, Any
 
 from yaaiotg.casts import as_text
 from yaaiotg.dialog_action import Say, Ask, DialogAction
-
+from yaaiotg.dialog_control import DialogControl, EndDialog
 
 default_message_cast = as_text
 
@@ -14,7 +13,6 @@ class Dialog:
     _chat = None
     user = None
     scenario = None
-    message_cast = default_message_cast
 
     class DialogActions:
         def __init__(self, dialog):
@@ -29,6 +27,7 @@ class Dialog:
     def __init__(self, user, scenario):
         self.user = user
         self.scenario = scenario
+        self.message_cast = default_message_cast
 
     def say(self, message, **kwargs):
         return Say(self._chat, self.user, message, **kwargs)
@@ -48,17 +47,17 @@ class Dialog:
         while 1:
             try:
                 action = await self._get_action(message)
-            except StopIteration:
-                return
-            except StopAsyncIteration:
-                return
+            except (StopIteration, StopAsyncIteration):
+                return EndDialog()
             message = None
             if isinstance(action, DialogAction):
                 await action()
                 if action.await_answer:
-                    return self.agen
+                    return
             elif inspect.isawaitable(action):
                 await action
+            elif isinstance(action, DialogControl):
+                return action
 
     async def step(self, chat, message):
         self._chat = chat
@@ -68,21 +67,6 @@ class Dialog:
             if not inspect.isasyncgen(self.agen):
                 raise Exception('scenario function is not generator')
         return await self._throttle(message)
-
-
-class SubAction:
-    def __call__(self, chat, message, user):
-        raise NotImplementedError
-
-
-class NewDialog(SubAction):
-    def __init__(self, scenario: Callable[[Dialog.DialogActions], Any]):
-        self.scenario = scenario
-
-    def __call__(self, chat, message, user):
-        new_dialog = Dialog(user, self.scenario)
-        user.dialog, old_dialog = new_dialog, user.dialog
-        del old_dialog
 
 
 __author__ = 'manitou'

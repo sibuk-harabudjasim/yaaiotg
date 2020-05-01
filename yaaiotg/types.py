@@ -7,7 +7,7 @@ from attr.__init__ import dataclass
 @dataclass(order=True)
 class KbdKey:
     text: str
-    callback: Callable[..., Any] = lambda chat, message, user: message['text']
+    callback: Callable[..., Any] = lambda chat, message, user: message
 
 
 @dataclass(order=True)

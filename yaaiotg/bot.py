@@ -4,6 +4,7 @@ import traceback
 from aiotg import Bot
 
 from yaaiotg.dialog import Dialog
+from yaaiotg.dialog_control import DialogControl
 from yaaiotg.userstorage.base import User
 
 
@@ -30,15 +31,19 @@ class YaaiotgBot:
             if key == message['text']:
                 return key_info.callback(chat, message, user)
 
+    async def _process_dialog_control(self, control, chat, message, user):
+        control(chat, message, user)
+        if control.need_throttle:
+            await self._throttle_dialog(chat, message, user)
+
     async def _throttle_dialog(self, chat, message, user):
         try:
             if not user.dialog:
                 user.dialog = Dialog(user, self.entry_point)
             awaited_answer = await user.dialog.step(chat, message)
 
-            if not awaited_answer:
-                dialog, user.dialog = user.dialog, None
-                del dialog
+            if awaited_answer and isinstance(awaited_answer, DialogControl):
+                await self._process_dialog_control(awaited_answer, chat, message, user)
 
         except RuntimeError as e:
             # TODO: double check, if this exception is needed
@@ -54,12 +59,13 @@ class YaaiotgBot:
 
     async def default_message_handler(self, chat, message):
         user = self.userstorage.get_or_create(chat.sender['id'], self.user_class(chat.sender))
+        # TODO: find a way to not duplicate _throttle call
         # Can change user dialog
         message_data = self._process_subscriptions(chat, message, user)
         message = message_data or message
 
         # Can change user dialog
-        self._throttle_dialog(chat, message, user)
+        await self._throttle_dialog(chat, message, user)
         self.userstorage.save(chat.sender['id'], user)
 
     async def default_callback_handler(self, chat, callback_query):
