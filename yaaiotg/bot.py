@@ -56,7 +56,7 @@ class YaaiotgBot:
         user = self.userstorage.get_or_create(chat.sender['id'], self.user_class(chat.sender))
         # Can change user dialog
         message_data = self._process_subscriptions(chat, message, user)
-        message = message_data or message['text']
+        message = message_data or message
 
         # Can change user dialog
         self._throttle_dialog(chat, message, user)

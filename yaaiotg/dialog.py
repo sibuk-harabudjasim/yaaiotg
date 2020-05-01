@@ -2,7 +2,11 @@
 import inspect
 from typing import Callable, Any
 
+from yaaiotg.casts import as_text
 from yaaiotg.dialog_action import Say, Ask, DialogAction
+
+
+default_message_cast = as_text
 
 
 class Dialog:
@@ -10,6 +14,7 @@ class Dialog:
     _chat = None
     user = None
     scenario = None
+    message_cast = default_message_cast
 
     class DialogActions:
         def __init__(self, dialog):
@@ -28,12 +33,15 @@ class Dialog:
     def say(self, message, **kwargs):
         return Say(self._chat, self.user, message, **kwargs)
 
-    def ask(self, message=None):
+    def ask(self, message=None, cast=None):
+        if cast:
+            self.message_cast = cast
         return Ask(self._chat, self.user, message)
 
     def _get_action(self, message=None):
         if message:
-            return self.agen.asend(message)
+            cast, self.message_cast = self.message_cast, default_message_cast
+            return self.agen.asend(cast(message))
         return self.agen.__anext__()
 
     async def _throttle(self, message=None):
@@ -55,7 +63,7 @@ class Dialog:
     async def step(self, chat, message):
         self._chat = chat
         if not self.agen:
-            self.agen = self.scenario(self.DialogActions(self), message)
+            self.agen = self.scenario(self.DialogActions(self), default_message_cast(message))
             message = None
             if not inspect.isasyncgen(self.agen):
                 raise Exception('scenario function is not generator')
