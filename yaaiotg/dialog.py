@@ -72,7 +72,9 @@ class NewDialog(SubAction):
         self.scenario = scenario
 
     def __call__(self, chat, message, user):
-        return Dialog(user, self.scenario)
+        new_dialog = Dialog(user, self.scenario)
+        user.dialog, old_dialog = new_dialog, user.dialog
+        del old_dialog
 
 
 __author__ = 'manitou'

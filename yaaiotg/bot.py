@@ -30,21 +30,11 @@ class YaaiotgBot:
             if key == message['text']:
                 return key_info.callback(chat, message, user)
 
-    async def default_message_handler(self, chat, message):
-        user = self.userstorage.get_or_create(chat.sender['id'], self.user_class(chat.sender))
-        message_data = message['text']
-        data = self._process_subscriptions(chat, message, user)
-
-        if data:
-            if isinstance(data, Dialog):
-                user.dialog = data
-            else:
-                message_data = data
-
+    async def _throttle_dialog(self, chat, message, user):
         try:
             if not user.dialog:
                 user.dialog = Dialog(user, self.entry_point)
-            awaited_answer = await user.dialog.step(chat, message_data)
+            awaited_answer = await user.dialog.step(chat, message)
 
             if not awaited_answer:
                 dialog, user.dialog = user.dialog, None
@@ -61,6 +51,15 @@ class YaaiotgBot:
             # TODO: prettify
             print('generic exception caught:', e.__class__.__name__, str(e))
             traceback.print_exc()
+
+    async def default_message_handler(self, chat, message):
+        user = self.userstorage.get_or_create(chat.sender['id'], self.user_class(chat.sender))
+        # Can change user dialog
+        message_data = self._process_subscriptions(chat, message, user)
+        message = message_data or message['text']
+
+        # Can change user dialog
+        self._throttle_dialog(chat, message, user)
         self.userstorage.save(chat.sender['id'], user)
 
     async def default_callback_handler(self, chat, callback_query):
