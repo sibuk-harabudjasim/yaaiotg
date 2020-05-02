@@ -3,11 +3,13 @@ from yaaiotg.types import Keyboard, InlineKeyboard
 
 
 class User:
+    id = None
     dialog = None
     subscriptions = None
     callback_subscriptions = None
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, sender_data):
+        self.id = sender_data['id']
         self.subscriptions = {}
         self.callback_subscriptions = {}
 
@@ -20,6 +22,9 @@ class User:
             self.callback_subscriptions.clear()
             for key in inline_keyboard:
                 self.callback_subscriptions[key.slug] = key
+
+    def __repr__(self):
+        return 'User: {}'.format(self.id)
 
 
 class UserStorageBase:

@@ -3,6 +3,7 @@ import traceback
 
 from aiotg import Bot
 
+from yaaiotg.log import log
 from yaaiotg.dialog import Dialog
 from yaaiotg.dialog_control import DialogControl
 from yaaiotg.userstorage.base import User
@@ -29,12 +30,13 @@ class YaaiotgBot:
     def _process_subscriptions(chat, message, user):
         for key, key_info in user.subscriptions.items():
             if key == message['text']:
+                log.debug('Run subscriptions callback for: {}', key)
                 return key_info.callback(chat, message, user)
 
     async def _process_dialog_control(self, control, chat, message, user):
-        control(chat, message, user)
+        new_message = control(chat, message, user)
         if control.need_throttle:
-            await self._throttle_dialog(chat, message, user)
+            await self._throttle_dialog(chat, new_message or message, user)
 
     async def _throttle_dialog(self, chat, message, user):
         try:
@@ -42,6 +44,7 @@ class YaaiotgBot:
                 user.dialog = Dialog(user, self.entry_point)
             awaited_answer = await user.dialog.step(chat, message)
 
+            log.debug('{}, {}', awaited_answer, isinstance(awaited_answer, DialogControl))
             if awaited_answer and isinstance(awaited_answer, DialogControl):
                 await self._process_dialog_control(awaited_answer, chat, message, user)
 
@@ -74,6 +77,7 @@ class YaaiotgBot:
         self.userstorage.save(chat.sender['id'], user)
 
     def run(self, *args, **kwargs):
+        log.init()
         if not self.entry_point:
             self.entry_point = default_entry
         self.bot.default(self.default_message_handler)

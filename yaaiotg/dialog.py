@@ -1,11 +1,34 @@
 # -*- coding: utf-8 -*-
 import inspect
 
-from yaaiotg.casts import as_text
+from yaaiotg.casts import as_text, as_is
 from yaaiotg.dialog_action import Say, Ask, DialogAction
-from yaaiotg.dialog_control import DialogControl, EndDialog
+from yaaiotg.dialog_control import DialogControl, EndDialog, SubDialogReturn, SubDialogRun
+from yaaiotg.log.object_log import ObjectLog
 
 default_message_cast = as_text
+
+
+class DialogActions:
+    def __init__(self, dialog):
+        self.dialog = dialog
+
+    def say(self, *args, **kwargs):
+        return self.dialog.say(*args, **kwargs)
+
+    def ask(self, *args, **kwargs):
+        return self.dialog.ask(*args, **kwargs)
+
+    def subdialog(self, *args, **kwargs):
+        return self.dialog.subdialog(*args, **kwargs)
+
+    def end(self):
+        return self.dialog.end()
+
+
+class SubDialogActions(DialogActions):
+    def return_(self, *args, **kwargs):
+        return self.dialog.return_(*args, **kwargs)
 
 
 class Dialog:
@@ -13,21 +36,14 @@ class Dialog:
     _chat = None
     user = None
     scenario = None
-
-    class DialogActions:
-        def __init__(self, dialog):
-            self.dialog = dialog
-
-        def say(self, *args, **kwargs):
-            return self.dialog.say(*args, **kwargs)
-
-        def ask(self, *args, **kwargs):
-            return self.dialog.ask(*args, **kwargs)
+    dialog_actions_class = DialogActions
+    log = None
 
     def __init__(self, user, scenario):
         self.user = user
         self.scenario = scenario
         self.message_cast = default_message_cast
+        self.log = ObjectLog(self)
 
     def say(self, message, **kwargs):
         return Say(self._chat, self.user, message, **kwargs)
@@ -37,6 +53,14 @@ class Dialog:
             self.message_cast = cast
         return Ask(self._chat, self.user, message)
 
+    def subdialog(self, scenario, initial_message=None):
+        self.message_cast = as_is
+        return SubDialogRun(scenario, initial_message)
+
+    @staticmethod
+    def end():
+        return EndDialog()
+
     def _get_action(self, message=None):
         if message:
             cast, self.message_cast = self.message_cast, default_message_cast
@@ -44,10 +68,12 @@ class Dialog:
         return self.agen.__anext__()
 
     async def _throttle(self, message=None):
+        self.log.debug('Throttling')
         while 1:
             try:
                 action = await self._get_action(message)
-            except (StopIteration, StopAsyncIteration):
+            except (StopIteration, StopAsyncIteration) as e:
+                self.log.debug('StopIteration: {}', e)
                 return EndDialog()
             message = None
             if isinstance(action, DialogAction):
@@ -62,11 +88,34 @@ class Dialog:
     async def step(self, chat, message):
         self._chat = chat
         if not self.agen:
-            self.agen = self.scenario(self.DialogActions(self), default_message_cast(message))
+            self.agen = self.scenario(self.dialog_actions_class(self), message)
             message = None
             if not inspect.isasyncgen(self.agen):
                 raise Exception('scenario function is not generator')
-        return await self._throttle(message)
+        ret = await self._throttle(message)
+        self.log.debug('Throttle result: {}', ret or 'Regular await')
+        return ret
+
+    def __repr__(self):
+        return '{} Dialog: {}'.format(self.user, self.scenario.__name__)
+
+
+class SubDialog(Dialog):
+    dialog_actions_class = SubDialogActions
+
+    def __init__(self, user, scenario, parent_dialog):
+        super().__init__(user, scenario)
+        self.parent = parent_dialog
+
+    def return_(self, value):
+        return SubDialogReturn(self.parent, value)
+
+    async def step(self, chat, message):
+        ret = await super().step(chat, message)
+        if isinstance(ret, EndDialog):
+            raise Exception('Subdialog should never reach generator end. '
+                            'Please use dialog.return_() for subdialog exit')
+        return ret
 
 
 __author__ = 'manitou'

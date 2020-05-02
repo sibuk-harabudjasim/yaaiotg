@@ -9,4 +9,7 @@ def as_tg_message(message):
     return message
 
 
+as_is = as_tg_message
+
+
 __author__ = 'manitou'
