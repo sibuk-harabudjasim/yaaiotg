@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from yaaiotg.casts import as_is
 
 
 class DialogControl:
@@ -13,10 +14,17 @@ class DialogControl:
 
 class EndDialog(DialogControl):
     need_throttle = False
+    user_initiated = None
+
+    def __init__(self, user_initiated=True):
+        self.user_initiated = user_initiated
 
     def __call__(self, chat, message, user):
         user.dialog, dialog = None, user.dialog
         del dialog
+
+    def __repr__(self):
+        return '{}{}'.format(super().__repr__(), ' user initiated' if self.user_initiated else '')
 
 
 class SubDialogRun(DialogControl):
@@ -28,6 +36,8 @@ class SubDialogRun(DialogControl):
         from yaaiotg.dialog import SubDialog
         new_dialog = SubDialog(user, self.scenario, user.dialog)
         user.dialog = new_dialog
+        if self.initial_message:
+            user.dialog.message_cast = as_is
         return self.initial_message
 
     def __repr__(self):
@@ -42,6 +52,8 @@ class SubDialogReturn(DialogControl):
     def __call__(self, chat, message, user):
         user.dialog, dialog = self.parent, user.dialog
         del dialog
+        if self.result:
+            user.dialog.message_cast = as_is
         return self.result
 
     def __repr__(self):

@@ -74,7 +74,7 @@ class Dialog:
                 action = await self._get_action(message)
             except (StopIteration, StopAsyncIteration) as e:
                 self.log.debug('StopIteration: {}', e)
-                return EndDialog()
+                return EndDialog(user_initiated=False)
             message = None
             if isinstance(action, DialogAction):
                 await action()
@@ -88,7 +88,8 @@ class Dialog:
     async def step(self, chat, message):
         self._chat = chat
         if not self.agen:
-            self.agen = self.scenario(self.dialog_actions_class(self), message)
+            self.agen = self.scenario(self.dialog_actions_class(self), self.message_cast(message))
+            self.message_cast = default_message_cast
             message = None
             if not inspect.isasyncgen(self.agen):
                 raise Exception('scenario function is not generator')
@@ -112,9 +113,12 @@ class SubDialog(Dialog):
 
     async def step(self, chat, message):
         ret = await super().step(chat, message)
-        if isinstance(ret, EndDialog):
-            raise Exception('Subdialog should never reach generator end. '
-                            'Please use dialog.return_() for subdialog exit')
+        if isinstance(ret, EndDialog) and not ret.user_initiated:
+            self.log.warning('End of subdialog without return. '
+                             'Empty result won\'t be passed to parent dialog. '
+                             'If it\'s OK, just ignore this warning.')
+            ret = SubDialogReturn(self.parent, None)
+            ret.need_throttle = False
         return ret
 
 
