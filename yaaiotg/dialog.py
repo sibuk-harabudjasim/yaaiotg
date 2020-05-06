@@ -12,6 +12,7 @@ default_message_cast = as_text
 class DialogActions:
     def __init__(self, dialog):
         self.dialog = dialog
+        self.user = dialog.user
 
     def say(self, *args, **kwargs):
         return self.dialog.say(*args, **kwargs)
@@ -29,6 +30,27 @@ class DialogActions:
 class SubDialogActions(DialogActions):
     def return_(self, *args, **kwargs):
         return self.dialog.return_(*args, **kwargs)
+
+
+class GeneratorWrapper:
+    def __init__(self, gen):
+        self.gen = gen
+        if not inspect.isasyncgen(self.gen) and not inspect.isgenerator(self.gen):
+            raise Exception('scenario function is not generator')
+        if inspect.isasyncgen(self.gen):
+            self.next = self.gen.__anext__
+            self.send = self.gen.asend
+
+    async def next(self):
+        return self.gen.__next__()
+
+    async def send(self, value):
+        return self.gen.send(value)
+
+
+async def async_wrapper(gen):
+    for val in gen():
+        yield val
 
 
 class Dialog:
@@ -64,8 +86,8 @@ class Dialog:
     def _get_action(self, message=None):
         if message:
             cast, self.message_cast = self.message_cast, default_message_cast
-            return self.agen.asend(cast(message))
-        return self.agen.__anext__()
+            return self.agen.send(cast(message))
+        return self.agen.next()
 
     async def _throttle(self, message=None):
         self.log.debug('Throttling')
@@ -88,11 +110,10 @@ class Dialog:
     async def step(self, chat, message):
         self._chat = chat
         if not self.agen:
-            self.agen = self.scenario(self.dialog_actions_class(self), self.message_cast(message))
+            self.agen = GeneratorWrapper(self.scenario(
+                self.dialog_actions_class(self), self.message_cast(message)))
             self.message_cast = default_message_cast
             message = None
-            if not inspect.isasyncgen(self.agen):
-                raise Exception('scenario function is not generator')
         ret = await self._throttle(message)
         self.log.debug('Throttle result: {}', ret or 'Regular await')
         return ret
