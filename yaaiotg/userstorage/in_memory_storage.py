@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-from yaaiotg.userstorage.base import UserStorageBase
+from yaaiotg.userstorage.base import UserStorageBase, User
 
 
 class InMemoryStorage(UserStorageBase):
-    users = None
+    users: dict[int, User]
 
     def __init__(self):
         self.users = {}
 
-    def get_or_create(self, user_id, default=None):
+    async def get_or_create(self, user_id: int, default: User) -> User:
         return self.users.get(user_id, default)
 
-    def save(self, user_id, user_data):
-        self.users[user_id] = user_data
+    async def save(self, user: User)-> None:
+        self.users[user.id] = user
 
 
 __author__ = 'manitou'

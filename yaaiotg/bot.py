@@ -1,50 +1,61 @@
 # -*- coding: utf-8 -*-
+import logging
 import traceback
+from aiotg import Bot, Chat, CallbackQuery
 
-from aiotg import Bot
+from typing import Callable, Coroutine, Any
 
-from yaaiotg.log import log
+from yaaiotg.log.log import init as log_init
 from yaaiotg.dialog import Dialog
 from yaaiotg.dialog_control import DialogControl
-from yaaiotg.userstorage.base import User
+from yaaiotg.userstorage.base import User, UserStorageBase
+from yaaiotg.callback import CallbackActions
 
 
-async def default_entry(dialog, initial_message=None):
-    yield dialog.say('Hi! This is test yaaiotg bot! I only can say my name.')
+async def default_entry(dialog: Dialog, initial_message=None) -> None:
+    yield dialog.say("Hi! This is test yaaiotg bot! I only can say my name.")
+
+
+log = logging.getLogger()
 
 
 class YaaiotgBot:
-    userstorage = None
-    user_class = None
-    bot = None
+    userstorage: UserStorageBase
+    user_class: type
+    bot: Bot
+    entry_point: Callable[[Any], Coroutine] | None = None
 
-    entry_point = None
-    default_subscriptions = None
-
-    def __init__(self, *args, userstorage, user_class=User, **kwargs):
+    def __init__(self, *aiotg_args, userstorage: UserStorageBase, user_class: type = User, **aiotg_kwargs) -> None:
         self.userstorage = userstorage
         self.user_class = user_class
-        self.bot = Bot(*args, **kwargs)
+        self.bot = Bot(*aiotg_args, **aiotg_kwargs)
 
     @staticmethod
-    def _process_subscriptions(chat, message, user):
+    def _process_subscriptions(chat: Chat, message: dict, user: User) -> str | None:
         for key, key_info in user.subscriptions.items():
-            if key == message['text']:
-                log.debug('Run subscriptions callback for: {}', key)
+            if key == message["text"]:
+                log.debug(f"Run subscriptions callback for: {key}")
                 return key_info.callback(chat, message, user)
 
-    async def _process_dialog_control(self, control, chat, message, user):
+    async def _process_dialog_control(self, control: DialogControl, chat: Chat, message: dict, user: User) -> None:
         new_message = control(chat, message, user)
         if control.need_throttle:
             await self._throttle_dialog(chat, new_message or message, user)
 
-    async def _throttle_dialog(self, chat, message, user):
+    async def _process_callback(self, chat: Chat, callback_query: CallbackQuery, user: User) -> None:
+        actions = CallbackActions(chat, callback_query, user)
+        if callback := user.callback_subscriptions.get(callback_query.data, None):
+            log.debug(f"Run callback for: {callback_query.data}")
+            await callback(user, actions)
+        callback_query.answer()
+
+    async def _throttle_dialog(self, chat: Chat, message: dict, user: User) -> None:
         try:
             if not user.dialog:
                 user.dialog = Dialog(user, self.entry_point)
             awaited_answer = await user.dialog.step(chat, message)
 
-            log.debug('{}, {}', awaited_answer, isinstance(awaited_answer, DialogControl))
+            log.debug(f"{awaited_answer=}, {isinstance(awaited_answer, DialogControl)=}")
             if awaited_answer and isinstance(awaited_answer, DialogControl):
                 await self._process_dialog_control(awaited_answer, chat, message, user)
 
@@ -57,11 +68,11 @@ class YaaiotgBot:
                 raise
         except Exception as e:
             # TODO: prettify
-            print('generic exception caught:', e.__class__.__name__, str(e))
+            log.error(f"generic exception caught: {e.__class__.__name__}, {str(e)}")
             traceback.print_exc()
 
-    async def default_message_handler(self, chat, message):
-        user = self.userstorage.get_or_create(chat.sender['id'], self.user_class(chat.sender))
+    async def default_message_handler(self, chat: Chat, message: dict) -> None:
+        user = await self.userstorage.get_or_create(chat.sender["id"], self.user_class(chat.sender))
         # TODO: find a way to not duplicate _throttle call
         # Can change user dialog
         message_data = self._process_subscriptions(chat, message, user)
@@ -69,20 +80,21 @@ class YaaiotgBot:
 
         # Can change user dialog
         await self._throttle_dialog(chat, message, user)
-        self.userstorage.save(chat.sender['id'], user)
+        await self.userstorage.save(user)
 
-    async def default_callback_handler(self, chat, callback_query):
-        user = self.userstorage.get_or_create(chat.sender['id'], self.user_class(chat.sender))
-        # do smth
-        self.userstorage.save(chat.sender['id'], user)
+    async def default_callback_handler(self, chat: Chat, callback_query: CallbackQuery) -> None:
+        user = await self.userstorage.get_or_create(callback_query.src["from"]["id"], self.user_class(chat.sender))
 
-    def run(self, *args, **kwargs):
-        log.init()
+        await self._process_callback(chat, callback_query, user)
+        await self.userstorage.save(user)
+
+    async def run(self):
+        log_init()
         if not self.entry_point:
             self.entry_point = default_entry
         self.bot.default(self.default_message_handler)
         self.bot.callback(self.default_callback_handler)
-        self.bot.run(*args, **kwargs)
+        await self.bot.loop()
 
 
 __author__ = 'manitou'
