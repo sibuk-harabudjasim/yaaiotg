@@ -21,13 +21,11 @@ log = logging.getLogger()
 
 class YaaiotgBot:
     userstorage: UserStorageBase
-    user_class: type
     bot: Bot
     entry_point: Callable[[Any], Coroutine] | None = None
 
-    def __init__(self, *aiotg_args, userstorage: UserStorageBase, user_class: type = User, **aiotg_kwargs) -> None:
+    def __init__(self, *aiotg_args, userstorage: UserStorageBase, **aiotg_kwargs) -> None:
         self.userstorage = userstorage
-        self.user_class = user_class
         self.bot = Bot(*aiotg_args, **aiotg_kwargs)
 
     @staticmethod
@@ -72,7 +70,7 @@ class YaaiotgBot:
             traceback.print_exc()
 
     async def default_message_handler(self, chat: Chat, message: dict) -> None:
-        user = await self.userstorage.get_or_create(chat.sender["id"], self.user_class(chat.sender))
+        user = await self.userstorage.get_or_create(chat.sender["id"], chat.sender)
         # TODO: find a way to not duplicate _throttle call
         # Can change user dialog
         message_data = self._process_subscriptions(chat, message, user)
@@ -83,7 +81,7 @@ class YaaiotgBot:
         await self.userstorage.save(user)
 
     async def default_callback_handler(self, chat: Chat, callback_query: CallbackQuery) -> None:
-        user = await self.userstorage.get_or_create(callback_query.src["from"]["id"], self.user_class(chat.sender))
+        user = await self.userstorage.get_or_create(callback_query.src["from"]["id"], callback_query.src["from"])
 
         await self._process_callback(chat, callback_query, user)
         await self.userstorage.save(user)
